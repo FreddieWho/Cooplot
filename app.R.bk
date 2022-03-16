@@ -1,0 +1,124 @@
+library(shiny)
+library(RPushbullet)
+
+library(shinyFiles)
+library(shinyWidgets)
+library(shinypop)
+library(shinydashboard)
+library(shinydashboardPlus)
+
+library(ggplot2)
+library(ggplotify)
+
+
+dir_gallery <- '/home/users/huyudi/tools/uplot/gallery'
+
+# ui ----------------------------------------------------------------------
+
+dB <- dashboardBody(
+  column(
+    width = 2,
+    box(width = 12,
+        title = 'Parameters',
+        fluidRow(
+          column(
+            width = 12,
+            numericInput('plot_width', 'Width', 800, min = 1),
+            numericInput('plot_height', 'Height', 800, min = 1),
+            textInput('download_filename',
+                      'Download as ...',
+                      value = 'plot'),
+            downloadBttn('download'),
+            actionBttn('save','Save object')
+          )
+        ))
+  ),
+  column(10,
+         box(
+           width = 12,
+           title = 'Plot',
+           uiOutput('render_box')
+         ))
+)
+dbP <- shinydashboardPlus::dashboardPage(
+  header = dashboardHeader(title = 'urBoard'),
+  sidebar = dashboardSidebar(
+    shinyDirButton('gallery', 
+                   'Select a gallery',
+                   title ='Please select a file'),
+    br(),
+    awesomeCheckboxGroup('plot_list',
+                         label = 'Plots',
+                         choices = NULL)
+  ),
+  body = dB
+)
+# server ------------------------------------------------------------------
+server <- function(input, output, session) {
+  reactiveG <- reactiveValues()
+  
+  shinyDirChoose(
+    input,
+    'gallery',
+    root = c(Gallery = dir_gallery),
+    session = session,
+    allowDirCreate = F
+  )
+  
+  observe({
+    reactiveG$selectedDir <- parseDirPath(c(Gallery = dir_gallery), 
+                                input$gallery)
+    reactiveG$list <- list.files(reactiveG$selectedDir)
+    
+    updateAwesomeCheckboxGroup(session,
+                               'plot_list',
+                               choices = reactiveG$list)
+    
+    print(reactiveG$list)
+  })
+  
+  observe({
+    if(length(input$plot_list) > 0){
+      showNotification('Loading the plot')
+      reactiveG$g <- readRDS(paste0(reactiveG$selectedDir,'/',input$plot_list))
+    }
+  })
+  
+  
+  
+  observeEvent(input$save,{
+    notie_confirm(
+      inputId = 'save_confirm',
+      text = 'Ready to save?',
+      label_submit = 'Save',
+      label_cancel = 'Cancel'
+    )
+    
+    if(save_confirm){
+      saveRDS(paste0(reactiveG$selectedDir,'/',input$plot_list))
+    }
+  })
+  
+  output$download <- downloadHandler(
+    filename = paste0(input$download_filename,'.png'),
+    content = function(file) {
+      ggsave(file,
+             reactiveG$g,
+             width = input$plot_width*(25/6),
+             height = input$plot_height*(25/6),
+             units = 'px')
+    }
+  )
+  
+  output$render_box <- renderUI({
+    plotOutput("render",
+               width = input$plot_width,
+               height = input$plot_height)
+  })
+  
+  output$render <- renderPlot({
+    reactiveG$g
+  })
+}
+
+shinyApp(ui = ui, server = server)
